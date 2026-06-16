@@ -1,0 +1,38 @@
+{
+  "name": "@benchagi/aurelius-bridge",
+  "version": "0.1.0",
+  "description": "Local Aurelius agent-vault bridge — pair a Mac to a BenchAGI workspace and run a supervised listener so the web Aurelius reaches the tenant's local Claude. No server-side inference.",
+  "type": "module",
+  "bin": {
+    "aurelius": "./bin/aurelius.mjs"
+  },
+  "files": [
+    "bin",
+    "runtime",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test runtime/bridge/*.test.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  },
+  "license": "UNLICENSED",
+  "private": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BenchAGI/aurelius-bridge.git"
+  },
+  "homepage": "https://github.com/BenchAGI/aurelius-bridge#readme",
+  "keywords": [
+    "benchagi",
+    "aurelius",
+    "bridge",
+    "agent-vault",
+    "pairing",
+    "presence"
+  ]
+}
