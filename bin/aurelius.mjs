@@ -11,6 +11,7 @@ import { readBridgeCredential } from "../runtime/bridge/credentialStore.mjs";
 import { runBridgeListener } from "../runtime/bridge/listener.mjs";
 import { readBridgeStatus } from "../runtime/bridge/statusStore.mjs";
 import { readGatewayProviderStatus, setGatewayProviderKey } from "../runtime/bridge/gatewayAuth.mjs";
+import { streamGatewayBridgeTurn } from "../runtime/bridge/gatewayRunner.mjs";
 
 const BRIDGE_LABEL = "com.benchagi.aurelius-bridge";
 
@@ -23,6 +24,7 @@ const usage = `Usage:
   aurelius bridge status [--principal <name>]
   aurelius gateway set-key [--key <sk-ant-…|->] [--agent-dir <dir>]
   aurelius gateway status [--agent-dir <dir>]
+  aurelius gateway ping
 
 Zero-touch: 'aurelius link' pairs using your Bench sign-in (no code). Supply the
 Firebase ID token via --id-token, AURELIUS_BRIDGE_ID_TOKEN, or stdin (--id-token -).
@@ -149,6 +151,29 @@ async function main() {
         `Next: AURELIUS_BRIDGE_RUNNER=gateway aurelius bridge up`,
       ].join("\n") + "\n",
     );
+    return;
+  }
+
+  if (command === "gateway" && flags.positionals[0] === "ping") {
+    // One real turn through the gateway-loop runner — the onboarding keyed-turn
+    // check (L1). Needs AURELIUS_GATEWAY_TOKEN/OPENCLAW_GATEWAY_TOKEN (and
+    // AURELIUS_GATEWAY_URL if the local gateway isn't on the default port).
+    process.stdout.write("Pinging the keyed gateway-loop…\n");
+    let text = "";
+    try {
+      for await (const delta of streamGatewayBridgeTurn({
+        messages: [{ role: "user", content: "Reply in five words confirming you are alive." }],
+        sessionId: "aurelius-gateway-ping",
+      })) {
+        text += delta;
+        process.stdout.write(delta);
+      }
+    } catch (error) {
+      process.stderr.write(`\n✖ gateway ping failed: ${error instanceof Error ? error.message : String(error)}\n`);
+      process.exitCode = 1;
+      return;
+    }
+    process.stdout.write(`\n✔ streamed ${text.length} chars through the keyed gateway.\n`);
     return;
   }
 
