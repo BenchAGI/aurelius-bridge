@@ -20,7 +20,7 @@
   "devDependencies": {
     "typescript": "^5.4.5"
   },
-  "license": "UNLICENSED",
+  "license": "MIT",
   "private": false,
   "repository": {
     "type": "git",
