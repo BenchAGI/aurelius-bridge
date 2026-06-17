@@ -10,6 +10,7 @@ import { exchangePairingCode, exchangeSelfPairing } from "../runtime/bridge/pair
 import { readBridgeCredential } from "../runtime/bridge/credentialStore.mjs";
 import { runBridgeListener } from "../runtime/bridge/listener.mjs";
 import { readBridgeStatus } from "../runtime/bridge/statusStore.mjs";
+import { readGatewayProviderStatus, setGatewayProviderKey } from "../runtime/bridge/gatewayAuth.mjs";
 
 const BRIDGE_LABEL = "com.benchagi.aurelius-bridge";
 
@@ -20,14 +21,23 @@ const usage = `Usage:
   aurelius bridge up | down
   aurelius bridge listen [--principal <name>]
   aurelius bridge status [--principal <name>]
+  aurelius gateway set-key [--key <sk-ant-…|->] [--agent-dir <dir>]
+  aurelius gateway status [--agent-dir <dir>]
 
 Zero-touch: 'aurelius link' pairs using your Bench sign-in (no code). Supply the
 Firebase ID token via --id-token, AURELIUS_BRIDGE_ID_TOKEN, or stdin (--id-token -).
+
+'aurelius gateway set-key' places the Bench-provisioned per-customer Anthropic key
+into the local OpenClaw gateway's auth.json so the gateway-loop runner bills it.
+Supply the key via --key -, ANTHROPIC_API_KEY, or stdin (avoid passing secrets as
+literal argv). Then: AURELIUS_BRIDGE_RUNNER=gateway aurelius bridge up.
 
 Environment:
   AURELIUS_PRINCIPAL          Principal name, default: cory
   AURELIUS_BRIDGE_URL         Bridge base URL, default: https://benchagi.com
   AURELIUS_BRIDGE_ID_TOKEN    Firebase ID token for 'aurelius link'
+  OPENCLAW_AGENT_DIR          Gateway agent dir (default: ~/.openclaw/agent)
+  ANTHROPIC_API_KEY           Key source for 'aurelius gateway set-key'
 `;
 
 async function main() {
@@ -128,7 +138,44 @@ async function main() {
     return;
   }
 
+  if (command === "gateway" && flags.positionals[0] === "set-key") {
+    const apiKey = await resolveApiKey(flags);
+    const result = await setGatewayProviderKey({ apiKey, explicit: flags.agentDir || undefined });
+    const status = await readGatewayProviderStatus({ explicit: flags.agentDir || undefined });
+    process.stdout.write(
+      [
+        `${result.replaced ? "Replaced" : "Placed"} Anthropic key in gateway auth.json: ${result.path}`,
+        `Key: ${status.masked}`,
+        `Next: AURELIUS_BRIDGE_RUNNER=gateway aurelius bridge up`,
+      ].join("\n") + "\n",
+    );
+    return;
+  }
+
+  if (command === "gateway" && flags.positionals[0] === "status") {
+    const status = await readGatewayProviderStatus({ explicit: flags.agentDir || undefined });
+    process.stdout.write(
+      status.configured
+        ? `Gateway anthropic key: configured (${status.type}${status.masked ? ` ${status.masked}` : ""}) at ${status.path}\n`
+        : `Gateway anthropic key: NOT configured at ${status.path}\n`,
+    );
+    process.exitCode = status.configured ? 0 : 1;
+    return;
+  }
+
   throw new Error(`Unknown command. ${usage}`);
+}
+
+// Secret precedence: explicit flag (non-`-`) → stdin (`-` or piped) → env.
+// Prefer stdin/env over literal argv so the key never lands in shell history.
+async function resolveApiKey(flags) {
+  if (flags.key && flags.key !== "-") return flags.key.trim();
+  if (flags.key === "-" || !process.stdin.isTTY) {
+    const piped = (await readStdin()).trim();
+    if (piped) return piped;
+  }
+  if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY.trim();
+  throw new Error("No Anthropic key. Pass --key <sk-ant-…|->, set ANTHROPIC_API_KEY, or pipe it on stdin.");
 }
 
 function bridgePlistPath() {
@@ -219,6 +266,8 @@ function parseFlags(args) {
     bridgeUrl: null,
     idToken: null,
     instance: null,
+    key: null,
+    agentDir: null,
   };
 
   for (let idx = 0; idx < args.length; idx += 1) {
@@ -237,6 +286,14 @@ function parseFlags(args) {
     }
     if (arg === "--instance") {
       out.instance = args[++idx] ?? "";
+      continue;
+    }
+    if (arg === "--key") {
+      out.key = args[++idx] ?? "";
+      continue;
+    }
+    if (arg === "--agent-dir") {
+      out.agentDir = args[++idx] ?? "";
       continue;
     }
     out.positionals.push(arg);
