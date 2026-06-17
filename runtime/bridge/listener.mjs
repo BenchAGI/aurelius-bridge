@@ -4,7 +4,19 @@ import { appendBridgeTurn, ensureBridgeSession } from "./bridgeSessionStore.mjs"
 import { postBridgeEvent } from "./bridgeClient.mjs";
 import { hydrateBridgeSeed } from "./seedHydration.mjs";
 import { streamClaudeBridgeTurn } from "./claudeRunner.mjs";
+import { streamGatewayBridgeTurn } from "./gatewayRunner.mjs";
 import { writeBridgeStatus } from "./statusStore.mjs";
+
+// Runner selection. Default = the local `claude` CLI subprocess (legacy,
+// human OAuth, conversational only). `gateway` routes the turn through the
+// local OpenClaw gateway agent loop keyed by the per-customer Anthropic key
+// (the L1 convergence). Flag-gated so the keyed path can land before it is
+// flipped on by default.
+function selectBridgeRunner() {
+  return (process.env.AURELIUS_BRIDGE_RUNNER || "claude").toLowerCase() === "gateway"
+    ? streamGatewayBridgeTurn
+    : streamClaudeBridgeTurn;
+}
 
 export async function runBridgeListener({
   principal = process.env.AURELIUS_PRINCIPAL || "cory",
@@ -188,7 +200,8 @@ export async function handleBridgeChatEvent(event, { credential, principal, home
       detail: JSON.stringify(memoryPathsForSeed(seed)),
       ts: new Date().toISOString(),
     });
-    for await (const delta of streamClaudeBridgeTurn({ messages: chat.messages, sessionId: chat.sessionId, seedContent: seed.seedContent })) {
+    const runTurn = selectBridgeRunner();
+    for await (const delta of runTurn({ messages: chat.messages, sessionId: chat.sessionId, seedContent: seed.seedContent, signal, fetchImpl })) {
       assistantText += delta;
       await emit({ type: "chat.token", sessionId: chat.sessionId, turnId: chat.turnId, token: delta });
     }
