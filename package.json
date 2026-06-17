@@ -1,6 +1,6 @@
 {
   "name": "@benchagi/aurelius-bridge",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local Aurelius agent-vault bridge — pair a Mac to a BenchAGI workspace and run a supervised listener so the web Aurelius reaches the tenant's local Claude. No server-side inference.",
   "type": "module",
   "bin": {
@@ -8,7 +8,9 @@
   },
   "files": [
     "bin",
-    "runtime",
+    "runtime/bridge/*.mjs",
+    "!runtime/bridge/*.test.mjs",
+    "!runtime/bridge/testTranspiledTsModule.mjs",
     "README.md"
   ],
   "engines": {

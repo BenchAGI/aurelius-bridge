@@ -17,13 +17,13 @@ function founderPrincipals() {
   return new Set(
     (process.env.AURELIUS_FOUNDER_PRINCIPALS || "")
       .split(",")
-      .map((p) => p.trim().toLowerCase())
+      .map((p) => normalizePrincipal(p))
       .filter(Boolean),
   );
 }
 
 function trustTierFor(principal) {
-  return founderPrincipals().has(String(principal || "").toLowerCase()) ? "founder" : "prospect";
+  return founderPrincipals().has(normalizePrincipal(principal)) ? "founder" : "prospect";
 }
 
 export function bridgeSessionsRoot({ homeDir = os.homedir() } = {}) {

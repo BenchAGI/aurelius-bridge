@@ -10,14 +10,14 @@ import { loadTranspiledTsModule } from "./testTranspiledTsModule.mjs";
 test("bridge sessions use canonical principal/date layout visible to sessionStore", async () => {
   const homeDir = await mkdtemp(path.join(os.tmpdir(), "aurelius-bridge-session-store-test-"));
   const sessionId = "bridge-visible-123";
-  const principal = "jim-johnson";
+  const principal = "fixture-operator";
   const today = todayLocalDate();
   const sessionDir = path.join(homeDir, ".openclaw", "wiki", "main", "sessions", principal, today, sessionId);
 
   await appendBridgeTurn({
     sessionId,
     tenantId: "tenant-visible",
-    principal: "Jim Johnson",
+    principal: "Fixture Operator",
     machineId: "a11ce001",
     userText: "Find this canonical bridge transcript.",
     assistantText: "Visible in history.",
