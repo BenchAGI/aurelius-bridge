@@ -8,11 +8,23 @@ import { normalizePrincipal } from "./credentialStore.mjs";
 const SESSION_ID_PATTERN = /^[a-zA-Z0-9._-]{6,160}$/;
 const DEFAULT_TURN_MODEL = "claude-haiku-4-5-20251001";
 const BRIDGE_SYNTHESIS_MODEL = "bridge-local-cli";
-const PRINCIPAL_TIERS = {
-  cory: "founder",
-  jim: "founder",
-  jory: "founder",
-};
+// Local date bucketing for session dirs; overridable so it isn't pinned to one region.
+const BRIDGE_TZ = process.env.AURELIUS_BRIDGE_TZ || "America/Denver";
+
+// Trust-tier principals are configured via env (comma-separated slugs), not
+// hardcoded — the public package ships no operator identities.
+function founderPrincipals() {
+  return new Set(
+    (process.env.AURELIUS_FOUNDER_PRINCIPALS || "")
+      .split(",")
+      .map((p) => p.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
+function trustTierFor(principal) {
+  return founderPrincipals().has(String(principal || "").toLowerCase()) ? "founder" : "prospect";
+}
 
 export function bridgeSessionsRoot({ homeDir = os.homedir() } = {}) {
   return path.join(homeDir, ".openclaw", "wiki", "main", "sessions");
@@ -151,7 +163,7 @@ function createBridgeManifest({ sessionId, tenantId, principal, machineId }) {
       osUser: process.env.USER || os.userInfo().username || "unknown",
       claudeAccount: null,
       namedIdentity: `aurelius-${principal}`,
-      trustTier: PRINCIPAL_TIERS[principal] ?? "prospect",
+      trustTier: trustTierFor(principal),
       principal,
     },
     agent: "aurelius",
@@ -216,7 +228,7 @@ function normalizeSessionId(sessionId) {
 
 function todayLocalDate() {
   return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Denver",
+    timeZone: BRIDGE_TZ,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

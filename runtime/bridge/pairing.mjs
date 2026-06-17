@@ -10,7 +10,7 @@ import { getMachineFingerprint } from "./fingerprint.mjs";
 
 export async function exchangePairingCode({
   code,
-  principal = "cory",
+  principal = "default",
   bridgeBaseUrl = DEFAULT_BRIDGE_BASE_URL,
   homeDir,
   fetchImpl = globalThis.fetch,
@@ -77,7 +77,7 @@ export async function exchangePairingCode({
 // exchangePairingCode and writes the same canonical credential the listener reads.
 export async function exchangeSelfPairing({
   idToken,
-  principal = "cory",
+  principal = "default",
   bridgeBaseUrl = DEFAULT_BRIDGE_BASE_URL,
   instanceId = null,
   homeDir,
