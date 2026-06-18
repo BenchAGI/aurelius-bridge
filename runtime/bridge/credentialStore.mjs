@@ -5,13 +5,13 @@ import path from "node:path";
 import { BRIDGE_VERSION, VAULT_CHAT_CHANNEL } from "./constants.mjs";
 
 export function normalizePrincipal(principal) {
-  return String(principal || "cory")
+  return String(principal || "default")
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "") || "cory";
+    .replace(/^-+|-+$/g, "") || "default";
 }
 
-export function bridgeAgentDir({ principal = "cory", homeDir = os.homedir() } = {}) {
+export function bridgeAgentDir({ principal = "default", homeDir = os.homedir() } = {}) {
   return path.join(homeDir, ".openclaw", "agents", `aurelius-${normalizePrincipal(principal)}`);
 }
 

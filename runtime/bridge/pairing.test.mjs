@@ -42,23 +42,23 @@ test("exchangePairingCode stores bridge credentials with mode 0600", async () =>
     const bridgeBaseUrl = `http://127.0.0.1:${address.port}`;
     const result = await exchangePairingCode({
       code: "12345678",
-      principal: "Jim Johnson",
+      principal: "Fixture Operator",
       bridgeBaseUrl,
       homeDir,
     });
 
-    assert.equal(result.credential.principal, "jim-johnson");
+    assert.equal(result.credential.principal, "fixture-operator");
     assert.equal(result.credential.token, "mock.bridge.jwt");
     assert.equal(result.credential.tenantId, "tenant-123");
     assert.equal(result.credential.channel, "vault-chat");
     assert.match(result.credential.machineId, /^[0-9a-f]{8}$/);
     assert.equal(seen[0].code, "12345678");
-    assert.equal(seen[0].principal, "jim-johnson");
+    assert.equal(seen[0].principal, "fixture-operator");
     assert.equal(seen[0].channel, "vault-chat");
 
-    const saved = await readBridgeCredential({ principal: "jim-johnson", homeDir });
+    const saved = await readBridgeCredential({ principal: "fixture-operator", homeDir });
     assert.equal(saved.token, "mock.bridge.jwt");
-    assert.equal(result.path, bridgeCredentialPath({ principal: "jim-johnson", homeDir }));
+    assert.equal(result.path, bridgeCredentialPath({ principal: "fixture-operator", homeDir }));
 
     const mode = (await stat(result.path)).mode & 0o777;
     assert.equal(mode, 0o600);
@@ -163,23 +163,23 @@ test("exchangeSelfPairing stores credentials via the zero-touch /pairing/self ro
     const bridgeBaseUrl = `http://127.0.0.1:${address.port}`;
     const result = await exchangeSelfPairing({
       idToken: "fake-firebase-id-token",
-      principal: "Jim Johnson",
+      principal: "Fixture Operator",
       bridgeBaseUrl,
       instanceId: "instance-7",
       homeDir,
     });
 
     assert.equal(authHeader, "Bearer fake-firebase-id-token");
-    assert.equal(result.credential.principal, "jim-johnson");
+    assert.equal(result.credential.principal, "fixture-operator");
     assert.equal(result.credential.token, "self.bridge.jwt");
     assert.equal(result.credential.tenantId, "tenant-self");
     assert.equal(result.credential.channel, "vault-chat");
     assert.equal(seen[0].instanceId, "instance-7");
     assert.match(result.credential.machineId, /^[0-9a-f]{8}$/);
 
-    const saved = await readBridgeCredential({ principal: "jim-johnson", homeDir });
+    const saved = await readBridgeCredential({ principal: "fixture-operator", homeDir });
     assert.equal(saved.token, "self.bridge.jwt");
-    assert.equal(result.path, bridgeCredentialPath({ principal: "jim-johnson", homeDir }));
+    assert.equal(result.path, bridgeCredentialPath({ principal: "fixture-operator", homeDir }));
 
     const mode = (await stat(result.path)).mode & 0o777;
     assert.equal(mode, 0o600);

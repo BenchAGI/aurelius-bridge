@@ -19,7 +19,7 @@ function selectBridgeRunner() {
 }
 
 export async function runBridgeListener({
-  principal = process.env.AURELIUS_PRINCIPAL || "cory",
+  principal = process.env.AURELIUS_PRINCIPAL || "default",
   homeDir,
   fetchImpl = globalThis.fetch,
   signal,

@@ -35,7 +35,7 @@ Supply the key via --key -, ANTHROPIC_API_KEY, or stdin (avoid passing secrets a
 literal argv). Then: AURELIUS_BRIDGE_RUNNER=gateway aurelius bridge up.
 
 Environment:
-  AURELIUS_PRINCIPAL          Principal name, default: cory
+  AURELIUS_PRINCIPAL          Principal name, default: default
   AURELIUS_BRIDGE_URL         Bridge base URL, default: https://benchagi.com
   AURELIUS_BRIDGE_ID_TOKEN    Firebase ID token for 'aurelius link'
   OPENCLAW_AGENT_DIR          Gateway agent dir (default: ~/.openclaw/agent)
@@ -52,7 +52,7 @@ async function main() {
   }
 
   const flags = parseFlags(args);
-  const principal = flags.principal || process.env.AURELIUS_PRINCIPAL || "cory";
+  const principal = flags.principal || process.env.AURELIUS_PRINCIPAL || "default";
   const bridgeBaseUrl = flags.bridgeUrl || process.env.AURELIUS_BRIDGE_URL || "https://benchagi.com";
 
   if (command === "pair") {

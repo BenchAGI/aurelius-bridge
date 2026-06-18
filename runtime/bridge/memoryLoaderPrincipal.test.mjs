@@ -6,7 +6,7 @@ import test from "node:test";
 
 import { loadTranspiledTsModule } from "./testTranspiledTsModule.mjs";
 
-test("buildMemoryContext hydrates cloud seed for the request principal on a Cory-default server", async () => {
+test("buildMemoryContext hydrates cloud seed for the request principal on a generic-default server", async () => {
   const homeDir = await mkdtemp(path.join(os.tmpdir(), "aurelius-memory-principal-home-"));
   const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "aurelius-memory-principal-workspace-"));
   await writeWorkspaceFixture(workspaceRoot);
@@ -34,21 +34,21 @@ test("buildMemoryContext hydrates cloud seed for the request principal on a Cory
   const previousWorkspaceRoot = process.env.AURELIUS_WORKSPACE_ROOT;
   const previousPrincipal = process.env.AURELIUS_PRINCIPAL;
   process.env.AURELIUS_WORKSPACE_ROOT = workspaceRoot;
-  process.env.AURELIUS_PRINCIPAL = "cory";
+  process.env.AURELIUS_PRINCIPAL = "default";
 
   try {
-    const jim = await buildMemoryContext("hello", [], { principal: "jim" });
-    const jory = await buildMemoryContext("hello", [], { principal: "jory" });
+    const alpha = await buildMemoryContext("hello", [], { principal: "alpha" });
+    const beta = await buildMemoryContext("hello", [], { principal: "beta" });
 
-    assert.deepEqual(seedCalls, ["jim", "jory"]);
-    assert.match(jim.systemBlocks[0].text, /jim cloud seed/);
-    assert.match(jim.systemBlocks[0].text, /Tier zero core/);
-    assert.doesNotMatch(jim.systemBlocks[0].text, /jory cloud seed/);
-    assert.match(jory.systemBlocks[0].text, /jory cloud seed/);
-    assert.notEqual(jim.manifest.cacheKey, jory.manifest.cacheKey);
+    assert.deepEqual(seedCalls, ["alpha", "beta"]);
+    assert.match(alpha.systemBlocks[0].text, /alpha cloud seed/);
+    assert.match(alpha.systemBlocks[0].text, /Tier zero core/);
+    assert.doesNotMatch(alpha.systemBlocks[0].text, /beta cloud seed/);
+    assert.match(beta.systemBlocks[0].text, /beta cloud seed/);
+    assert.notEqual(alpha.manifest.cacheKey, beta.manifest.cacheKey);
     assert.ok(
-      jim.manifest.tierAPaths.indexOf(path.join(workspaceRoot, "memory", "CORE.md")) <
-        jim.manifest.tierAPaths.indexOf(path.join(workspaceRoot, "MEMORY.md")),
+      alpha.manifest.tierAPaths.indexOf(path.join(workspaceRoot, "memory", "CORE.md")) <
+        alpha.manifest.tierAPaths.indexOf(path.join(workspaceRoot, "MEMORY.md")),
     );
   } finally {
     restoreEnv("AURELIUS_WORKSPACE_ROOT", previousWorkspaceRoot);

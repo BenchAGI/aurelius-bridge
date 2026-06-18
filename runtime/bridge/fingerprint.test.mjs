@@ -5,12 +5,12 @@ import { machineFingerprintFromParts } from "./fingerprint.mjs";
 
 test("machineFingerprintFromParts is stable and first8 hex", () => {
   const first = machineFingerprintFromParts({
-    hostname: "Cory-Mac-Studio.local",
+    hostname: "Fixture-Mac-Studio.local",
     systemUuid: "11111111-2222-3333-4444-555555555555",
     salt: "unit-test",
   });
   const second = machineFingerprintFromParts({
-    hostname: "cory-mac-studio.local",
+    hostname: "fixture-mac-studio.local",
     systemUuid: "11111111-2222-3333-4444-555555555555",
     salt: "unit-test",
   });
