@@ -12,6 +12,8 @@
 // `user` maps to a stable gateway sessionKey (continuity); `model` selects the
 // gateway agent.
 
+import { readGatewayTokenFromDisk } from "./gatewayToken.mjs";
+
 const DEFAULT_GATEWAY_URL = "http://127.0.0.1:18789";
 const DEFAULT_GATEWAY_MODEL = "openclaw";
 
@@ -21,15 +23,31 @@ export async function* streamGatewayBridgeTurn({
   seedContent = "",
   signal,
   fetchImpl = globalThis.fetch,
+  // Injectable for tests; defaults to the real on-disk OpenClaw token resolver.
+  readDiskToken = readGatewayTokenFromDisk,
 }) {
   const baseUrl = (process.env.AURELIUS_GATEWAY_URL || DEFAULT_GATEWAY_URL).replace(/\/+$/, "");
-  const token = process.env.AURELIUS_GATEWAY_TOKEN || process.env.OPENCLAW_GATEWAY_TOKEN;
+  const model = process.env.AURELIUS_GATEWAY_MODEL || DEFAULT_GATEWAY_MODEL;
+
+  // KQ-4: disk-resync, default OFF. With AURELIUS_GATEWAY_TOKEN_DISK_RESYNC=on,
+  // prefer the on-disk OpenClaw token over the (possibly stale) env snapshot and,
+  // on a 401/403, re-read disk + retry ONCE — so a gateway-token rotation
+  // mid-session self-heals instead of failing the turn. This is the on-Mac
+  // *inference* identity only; it is wholly independent of the paired-bridge JWT
+  // (credential.token in bridgeClient.authHeaders), which this runner never reads.
+  const diskResync =
+    (process.env.AURELIUS_GATEWAY_TOKEN_DISK_RESYNC || "off").toLowerCase() === "on";
+
+  let token = diskResync
+    ? (await readDiskToken()) ||
+      process.env.AURELIUS_GATEWAY_TOKEN ||
+      process.env.OPENCLAW_GATEWAY_TOKEN
+    : process.env.AURELIUS_GATEWAY_TOKEN || process.env.OPENCLAW_GATEWAY_TOKEN;
   if (!token) {
     throw new Error(
       "Gateway runner requires a gateway operator token; set AURELIUS_GATEWAY_TOKEN (or OPENCLAW_GATEWAY_TOKEN).",
     );
   }
-  const model = process.env.AURELIUS_GATEWAY_MODEL || DEFAULT_GATEWAY_MODEL;
 
   const body = {
     model,
@@ -38,20 +56,33 @@ export async function* streamGatewayBridgeTurn({
     messages: buildMessages(messages, seedContent),
   };
 
-  let response;
-  try {
-    response = await fetchImpl(`${baseUrl}/v1/chat/completions`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${token}`,
-        accept: "text/event-stream",
-      },
-      body: JSON.stringify(body),
-      signal,
-    });
-  } catch (error) {
-    throw new Error(`Gateway unreachable at ${baseUrl}; is the OpenClaw gateway running? (${describe(error)})`);
+  // Injects the bearer at call time so a re-read between attempts is picked up.
+  const sendTurn = async (bearer) => {
+    try {
+      return await fetchImpl(`${baseUrl}/v1/chat/completions`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${bearer}`,
+          accept: "text/event-stream",
+        },
+        body: JSON.stringify(body),
+        signal,
+      });
+    } catch (error) {
+      throw new Error(`Gateway unreachable at ${baseUrl}; is the OpenClaw gateway running? (${describe(error)})`);
+    }
+  };
+
+  let response = await sendTurn(token);
+  if (diskResync && (response.status === 401 || response.status === 403)) {
+    // A rotation 401s the token snapshot taken at turn start. Re-read disk and
+    // retry exactly once — but only when the token actually changed.
+    const refreshed = await readDiskToken();
+    if (refreshed && refreshed !== token) {
+      token = refreshed;
+      response = await sendTurn(token);
+    }
   }
 
   if (!response.ok) {
