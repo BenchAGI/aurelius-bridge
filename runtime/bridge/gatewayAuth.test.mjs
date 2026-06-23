@@ -79,10 +79,23 @@ test("status reports configured + masked key, never the full secret", async () =
   assert.doesNotMatch(present.masked, /SECRET/);
 });
 
-test("masks short/garbage keys defensively", () => {
+test("masks keys by shape, defensively", () => {
   assert.equal(maskKey("sk-ant-12345678"), "sk-ant-…5678");
-  assert.equal(maskKey("abc"), "sk-ant-…");
-  assert.equal(maskKey(undefined), "sk-ant-…");
+  assert.equal(maskKey("bench_inst_abcd1234"), "bench_…1234");
+  assert.equal(maskKey("abc"), "…");
+  assert.equal(maskKey(undefined), "…");
+});
+
+test("accepts a Bench-metered key and rejects unknown shapes", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "gw-auth-bench-"));
+  await setGatewayProviderKey({ apiKey: "bench_SYGSEOnNo57zf4QSmbcS_secret7890", explicit: dir });
+  const present = await readGatewayProviderStatus({ explicit: dir });
+  assert.equal(present.configured, true);
+  assert.equal(present.masked, "bench_…7890");
+  await assert.rejects(
+    () => setGatewayProviderKey({ apiKey: "nope-not-a-key", explicit: dir }),
+    /sk-ant-.*bench_/,
+  );
 });
 
 test("resolveGatewayAgentDir honors explicit > env > default with tilde expansion", () => {
