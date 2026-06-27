@@ -31,17 +31,20 @@ const usage = `Usage:
   aurelius bridge drift-watch [--principal <name>]     (one drift check; launchd-driven)
   aurelius bridge drift-install [--principal <name>]   (install + start the drift-watch timer)
   aurelius bridge drift-uninstall                      (stop the drift-watch timer)
-  aurelius gateway set-key [--key <sk-ant-…|->] [--agent-dir <dir>]
+  aurelius gateway set-key [--key <sk-ant-…|bench_…|->] [--agent-dir <dir>]
   aurelius gateway status [--agent-dir <dir>]
   aurelius gateway ping
 
 Zero-touch: 'aurelius link' pairs using your Bench sign-in (no code). Supply the
 Firebase ID token via --id-token, AURELIUS_BRIDGE_ID_TOKEN, or stdin (--id-token -).
 
-'aurelius gateway set-key' places the Bench-provisioned per-customer Anthropic key
-into the local OpenClaw gateway's auth.json so the gateway-loop runner bills it.
-Supply the key via --key -, ANTHROPIC_API_KEY, or stdin (avoid passing secrets as
-literal argv). Then: AURELIUS_BRIDGE_RUNNER=gateway aurelius bridge up.
+'aurelius gateway set-key' places the per-customer billing key into the local
+OpenClaw gateway's auth.json so the gateway-loop runner bills it. Two shapes:
+a 'sk-ant-…' Anthropic workspace key (gateway → Anthropic direct, Console-capped),
+or a 'bench_…' Bench-metered key (gateway → Bench metering proxy → token bucket;
+set the anthropic provider baseUrl to /api/v1/metered/anthropic). Supply the key
+via --key -, ANTHROPIC_API_KEY, or piped stdin (avoid literal argv for secrets).
+Then: AURELIUS_BRIDGE_RUNNER=gateway aurelius bridge up.
 
 Environment:
   AURELIUS_PRINCIPAL          Principal name, default: default
@@ -206,7 +209,7 @@ async function main() {
     const status = await readGatewayProviderStatus({ explicit: flags.agentDir || undefined });
     process.stdout.write(
       [
-        `${result.replaced ? "Replaced" : "Placed"} Anthropic key in gateway auth.json: ${result.path}`,
+        `${result.replaced ? "Replaced" : "Placed"} gateway billing key in auth.json: ${result.path}`,
         `Key: ${status.masked}`,
         `Next: AURELIUS_BRIDGE_RUNNER=gateway aurelius bridge up`,
       ].join("\n") + "\n",
@@ -241,8 +244,8 @@ async function main() {
     const status = await readGatewayProviderStatus({ explicit: flags.agentDir || undefined });
     process.stdout.write(
       status.configured
-        ? `Gateway anthropic key: configured (${status.type}${status.masked ? ` ${status.masked}` : ""}) at ${status.path}\n`
-        : `Gateway anthropic key: NOT configured at ${status.path}\n`,
+        ? `Gateway billing key: configured (${status.type}${status.masked ? ` ${status.masked}` : ""}) at ${status.path}\n`
+        : `Gateway billing key: NOT configured at ${status.path}\n`,
     );
     process.exitCode = status.configured ? 0 : 1;
     return;
@@ -260,7 +263,7 @@ async function resolveApiKey(flags) {
     if (piped) return piped;
   }
   if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY.trim();
-  throw new Error("No Anthropic key. Pass --key <sk-ant-…|->, set ANTHROPIC_API_KEY, or pipe it on stdin.");
+  throw new Error("No gateway billing key. Pass --key <sk-ant-…|bench_…|->, set ANTHROPIC_API_KEY, or pipe it on stdin.");
 }
 
 function bridgePlistPath() {

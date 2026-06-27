@@ -24,18 +24,26 @@ function gatewayAuthPath(opts = {}) {
   return path.join(resolveGatewayAgentDir(opts), "auth.json");
 }
 
-// Anthropic inference keys are `sk-ant-…`; admin keys are `sk-ant-admin…` and
-// CANNOT run inference, so reject them to fail loudly at placement time.
+// Two key shapes are accepted:
+//   • `sk-ant-…`  — a per-customer Anthropic workspace inference key (Console-capped,
+//     gateway → Anthropic direct). Admin keys (`sk-ant-admin…`) CANNOT run inference,
+//     so reject them to fail loudly at placement time.
+//   • `bench_…`   — a Bench-metered key. Billed through the Bench metering proxy: the
+//     gateway's anthropic provider `baseUrl` points at /api/v1/metered/anthropic, which
+//     resolves the key to the customer instance + token bucket. Accepted as-is.
 function assertUsableAnthropicKey(apiKey) {
   if (typeof apiKey !== "string" || !apiKey.trim()) {
-    throw new Error("Anthropic API key is required.");
+    throw new Error("API key is required.");
   }
   const key = apiKey.trim();
+  if (key.startsWith("bench_")) {
+    return key;
+  }
   if (key.startsWith("sk-ant-admin")) {
-    throw new Error("That is an Admin API key (sk-ant-admin…); the gateway needs a workspace inference key (sk-ant-…).");
+    throw new Error("That is an Admin API key (sk-ant-admin…); the gateway needs a workspace inference key (sk-ant-…) or a Bench-metered key (bench_…).");
   }
   if (!key.startsWith("sk-ant-")) {
-    throw new Error("Anthropic API key should start with 'sk-ant-'.");
+    throw new Error("API key should start with 'sk-ant-' (Anthropic workspace key) or 'bench_' (Bench-metered key).");
   }
   return key;
 }
@@ -83,8 +91,15 @@ export async function readGatewayProviderStatus({
 }
 
 export function maskKey(key) {
-  if (typeof key !== "string" || key.length < 8) return "sk-ant-…";
-  return `sk-ant-…${key.slice(-4)}`;
+  if (typeof key !== "string" || key.length < 8) return "…";
+  // Preserve the recognizable key prefix (sk-ant- / bench_) so status output makes
+  // it obvious whether the gateway is on a direct-Anthropic or Bench-metered key.
+  const prefix = key.startsWith("bench_")
+    ? "bench_…"
+    : key.startsWith("sk-ant-")
+      ? "sk-ant-…"
+      : "…";
+  return `${prefix}${key.slice(-4)}`;
 }
 
 function requireKey(apiKey) {
