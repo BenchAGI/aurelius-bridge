@@ -61,6 +61,12 @@ export async function connectEventStream(credential, { fetchImpl = globalThis.fe
   });
 }
 
+// Cloud-leg auth — ALWAYS the paired-bridge JWT (credential.token), the cloud
+// identity. NEVER fall back to a gateway operator token (AURELIUS_GATEWAY_TOKEN /
+// OPENCLAW_GATEWAY_TOKEN): those are the on-Mac *inference* identity used by
+// gatewayRunner.mjs and rotate independently. Mixing them would let a
+// gateway-token rotation revoke the cloud leg (KQ-4). credentialSplit.test.mjs
+// guards this invariant.
 function authHeaders(credential, { accept, contentType } = {}) {
   const headers = {
     Authorization: `Bearer ${credential.token}`,

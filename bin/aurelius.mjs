@@ -12,8 +12,14 @@ import { runBridgeListener } from "../runtime/bridge/listener.mjs";
 import { readBridgeStatus } from "../runtime/bridge/statusStore.mjs";
 import { readGatewayProviderStatus, setGatewayProviderKey } from "../runtime/bridge/gatewayAuth.mjs";
 import { streamGatewayBridgeTurn } from "../runtime/bridge/gatewayRunner.mjs";
+import {
+  driftWatchEnabled,
+  runDriftWatchTick,
+  startDriftWatch,
+} from "../runtime/bridge/driftWatch.mjs";
 
 const BRIDGE_LABEL = "com.benchagi.aurelius-bridge";
+const DRIFT_LABEL = "com.benchagi.aurelius-drift-watch";
 
 const usage = `Usage:
   aurelius pair <8-digit-code> [--principal <name>] [--bridge-url <url>]
@@ -22,6 +28,9 @@ const usage = `Usage:
   aurelius bridge up | down
   aurelius bridge listen [--principal <name>]
   aurelius bridge status [--principal <name>]
+  aurelius bridge drift-watch [--principal <name>]     (one drift check; launchd-driven)
+  aurelius bridge drift-install [--principal <name>]   (install + start the drift-watch timer)
+  aurelius bridge drift-uninstall                      (stop the drift-watch timer)
   aurelius gateway set-key [--key <sk-ant-…|bench_…|->] [--agent-dir <dir>]
   aurelius gateway status [--agent-dir <dir>]
   aurelius gateway ping
@@ -43,6 +52,13 @@ Environment:
   AURELIUS_BRIDGE_ID_TOKEN    Firebase ID token for 'aurelius link'
   OPENCLAW_AGENT_DIR          Gateway agent dir (default: ~/.openclaw/agent)
   ANTHROPIC_API_KEY           Key source for 'aurelius gateway set-key'
+  AURELIUS_GATEWAY_TOKEN_DISK_RESYNC  off|on (default off): the gateway runner
+                              re-reads the rotating gateway token from
+                              ~/.openclaw/{openclaw.json,.env} and retries once on
+                              401/403 — self-heals a mid-session token rotation.
+  AURELIUS_DRIFT_WATCH        off|on (default off): page #harness when the
+                              paired-Mac→cloud heartbeat goes stale/revoked. The
+                              'drift-install' timer arms this for itself only.
 `;
 
 async function main() {
@@ -117,8 +133,52 @@ async function main() {
     const abortController = new AbortController();
     process.on("SIGINT", () => abortController.abort());
     process.on("SIGTERM", () => abortController.abort());
-    const code = await runBridgeListener({ principal, signal: abortController.signal });
-    process.exitCode = code;
+    // Optional in-process drift-watch (AURELIUS_DRIFT_WATCH=on). Convenience only:
+    // it dies with the bridge, so it cannot report a hard bridge crash — the
+    // standalone 'bridge drift-install' timer is the durable detector.
+    const stopDriftWatch = startDriftWatch({ principal, signal: abortController.signal });
+    try {
+      const code = await runBridgeListener({ principal, signal: abortController.signal });
+      process.exitCode = code;
+    } finally {
+      stopDriftWatch();
+    }
+    return;
+  }
+
+  if (command === "bridge" && flags.positionals[0] === "drift-watch") {
+    // The launchd timer calls this every minute. Default-OFF everywhere: a tick
+    // without AURELIUS_DRIFT_WATCH=on is an explicit no-op (the installed plist
+    // arms the flag for itself).
+    if (!driftWatchEnabled()) {
+      process.stdout.write(
+        "AURELIUS_DRIFT_WATCH is off — drift-watch tick is a no-op. Set AURELIUS_DRIFT_WATCH=on (the installed timer does) to arm it.\n",
+      );
+      return;
+    }
+    const result = await runDriftWatchTick({ principal });
+    process.stdout.write(`drift-watch: ${result.action}${result.kind ? ` (${result.kind})` : ""}\n`);
+    return;
+  }
+
+  if (command === "bridge" && flags.positionals[0] === "drift-install") {
+    const target = await installDriftWatchLaunchAgent({ principal });
+    launchctl(["bootstrap", `gui/${process.getuid()}`, target], { ignoreError: true });
+    launchctl(["kickstart", `gui/${process.getuid()}/${DRIFT_LABEL}`], { ignoreError: true });
+    process.stdout.write(
+      [
+        `Installed + started the Aurelius drift-watch timer: ${target}`,
+        `Pages #harness when the paired-Mac→cloud heartbeat goes stale/revoked.`,
+        `Default-OFF elsewhere — this plist arms AURELIUS_DRIFT_WATCH=on for the timer only.`,
+        `Stop it with: aurelius bridge drift-uninstall`,
+      ].join("\n") + "\n",
+    );
+    return;
+  }
+
+  if (command === "bridge" && flags.positionals[0] === "drift-uninstall") {
+    launchctl(["bootout", `gui/${process.getuid()}/${DRIFT_LABEL}`], { ignoreError: true });
+    process.stdout.write("Aurelius drift-watch timer stopped.\n");
     return;
   }
 
@@ -246,6 +306,56 @@ async function installBridgeLaunchAgent({ principal }) {
     <key>HOME</key><string>${os.homedir()}</string>
     <key>PATH</key><string>${pathEnv}</string>
     <key>AURELIUS_PRINCIPAL</key><string>${principal}</string>
+  </dict>
+</dict>
+</plist>
+`;
+  await writeFile(plistPath, plist, "utf8");
+  await chmod(plistPath, 0o644).catch(() => undefined);
+  return plistPath;
+}
+
+function driftPlistPath() {
+  return path.join(os.homedir(), "Library", "LaunchAgents", `${DRIFT_LABEL}.plist`);
+}
+
+// A lean StartInterval timer that runs `aurelius bridge drift-watch` every minute
+// as its OWN launchd job — so it survives a hard bridge crash (an in-process
+// watcher would die with the bridge). Arms AURELIUS_DRIFT_WATCH=on for this timer
+// only; the flag stays OFF everywhere else.
+async function installDriftWatchLaunchAgent({ principal, intervalSeconds = 60 }) {
+  const plistPath = driftPlistPath();
+  const node = process.execPath;
+  const script = fileURLToPath(new URL("aurelius.mjs", import.meta.url));
+  const logDir = path.join(os.homedir(), "Library", "Logs", "Aurelius");
+  const logFile = path.join(logDir, "drift-watch.log");
+  const pathEnv = `${path.join(os.homedir(), ".local", "bin")}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin`;
+  await mkdir(logDir, { recursive: true });
+  await mkdir(path.dirname(plistPath), { recursive: true });
+  const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>${DRIFT_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${node}</string>
+    <string>${script}</string>
+    <string>bridge</string>
+    <string>drift-watch</string>
+    <string>--principal</string>
+    <string>${principal}</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>${intervalSeconds}</integer>
+  <key>StandardOutPath</key><string>${logFile}</string>
+  <key>StandardErrorPath</key><string>${logFile}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>${os.homedir()}</string>
+    <key>PATH</key><string>${pathEnv}</string>
+    <key>AURELIUS_PRINCIPAL</key><string>${principal}</string>
+    <key>AURELIUS_DRIFT_WATCH</key><string>on</string>
   </dict>
 </dict>
 </plist>
